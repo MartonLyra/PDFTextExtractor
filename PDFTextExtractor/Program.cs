@@ -21,6 +21,11 @@ namespace PDFTextExtractor
         public static bool overwriteTextFile = false;
         public static bool stopOnException = true;
         public static bool pauseOnException = true;
+        
+        public static bool logToFile = true;
+        public static string logFileName = "";
+        public static StringBuilder logTemp = new StringBuilder();
+
 
         static void Main(string[] args)
         {
@@ -39,6 +44,7 @@ namespace PDFTextExtractor
                 log("");
                 log("      /r:false or /r:true : Recursive folder - Look for PDFs recursively inside subfolders (default /r:false)");
                 log("      /w:false or /w:true : Overwrite output Text File if exists (default /w:false)");
+                log("      /l:false or /l:true : Log to file in output folder (default /l:true)");
                 log("");
                 log("      /soe:false or /soe:true : Stop on Error - If false, it will try to ignore any exception and continue looking for other PDF files (default /soe:true)");
                 log("      /poe:false or /poe:true : Pause on Error - If true, it will ask for <enter> key to continue in case of Exceptions (default /poe:true)");
@@ -65,6 +71,11 @@ namespace PDFTextExtractor
             if (CommandLine["w"] != null)
                 Boolean.TryParse(CommandLine["w"], out overwriteTextFile);
 
+            // Log to file in output folder (default /l:true)
+            if (CommandLine["l"] != null)
+                Boolean.TryParse(CommandLine["l"], out logToFile);
+
+
             // Stop on Exception
             if (CommandLine["soe"] != null)
                 Boolean.TryParse(CommandLine["soe"], out stopOnException);
@@ -75,9 +86,18 @@ namespace PDFTextExtractor
 
 #if DEBUG
             // using a different path for debugging
-            inputPDFFolder = @"D:\PDFInput";
-            outputTXTFolder = @"D:\PDFOutput";
+            inputPDFFolder = @"D:\PDFInput-Delme";
+            outputTXTFolder = @"D:\PDFOutput-Delme";
 #endif
+
+            // Calculating LOG fileName:
+            if (logToFile)
+            {
+                logFileName = Path.Combine(
+                    outputTXTFolder,
+                    String.Format("{0:yyyy-MM-dd HH-mm}", DateTime.Now) + " - PDF Text Extractor.log"
+                );
+            }
 
 
             bool inputPDFFolderExists = Directory.Exists(inputPDFFolder);
@@ -153,7 +173,7 @@ namespace PDFTextExtractor
                 {
                     try
                     {
-                        log(string.Format("\nExtracting text from {0}", file.Name));
+                        log(string.Format("Extracting text from {0}", file.Name));
                         var result = extractor.Extract(file.FullName);
 
                         // write to a text file with the same name but different extension:
@@ -164,9 +184,9 @@ namespace PDFTextExtractor
                         if (!Directory.Exists(folderDestination))
                             Directory.CreateDirectory(folderDestination);
 
-                        if (!overwriteTextFile && File.Exists(textFileName))
+                        if (!overwriteTextFile && File.Exists(Path.Combine(folderDestination, textFileName)))
                         {
-                            log("Text file already exists. Looking for next...");
+                            log("Text file already exists. Ignoring...\n");
                             continue;
                         }
 
@@ -175,25 +195,14 @@ namespace PDFTextExtractor
                         {
                             textFile.WriteLine(TextUtil.CleanPDFText(result.Text));
                         }
-                        log("Done. " + result + "bytes written.");
+                        log("Done: " + textFileName);
                     }
                     catch (Exception ex1)
                     {
                         log("Sorry, we ran into a problem while processing file\n  '" + file.FullName + "'");
                         log(" Exception: " + ex1 + "\n\n");
 
-                        if (stopOnException)
-                        {    
-                            log("Press <enter> to abort");
-                            Console.Read();
-                            System.Environment.Exit(255);
-                        }
-                        
-                        if (pauseOnException)
-                        {
-                            log("Press <enter> to continue...");
-                            Console.Read();
-                        }
+                        StopOrPauseExecution();
                     }
                     
                 }
@@ -203,24 +212,61 @@ namespace PDFTextExtractor
                 log("Sorry, we ran into a problem while processing folder\n  '" + currentFolder + "'");
                 log(" Exception: " + ex2 + "\n\n");
 
-                if (stopOnException)
-                {
-                    log("Press <enter> to abort");
-                    Console.Read();
-                    System.Environment.Exit(254);
-                }
-
-                if (pauseOnException)
-                {
-                    log("Press <enter> to continue...");
-                    Console.Read();
-                }
+                StopOrPauseExecution();
             }
         }
 
         public static void log(string text)
         {
             Console.WriteLine(text);
+            
+            if (logToFile)
+            {
+                logTemp.AppendLine(text);
+                 
+                if (!"".Equals(logFileName))
+                try
+                {
+                    File.AppendAllText(logFileName, logTemp.ToString(), Encoding.Unicode);
+                    logTemp.Clear();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Exception on save log to file:");
+                    Console.WriteLine(ex.ToString());
+
+
+                    // Do not call StopOrPauseExecution() - no log() use:
+                    if (stopOnException)
+                    {
+                        Console.WriteLine("Press <enter> to abort");
+                        Console.Read();
+                        System.Environment.Exit(254);
+                    }
+
+                    if (pauseOnException)
+                    {
+                        Console.WriteLine("Press <enter> to continue...");
+                        Console.Read();
+                    }
+                }
+            }
+        }
+
+        private static void StopOrPauseExecution()
+        {
+            if (stopOnException)
+            {
+                log("Press <enter> to abort");
+                Console.Read();
+                System.Environment.Exit(254);
+            }
+
+            if (pauseOnException)
+            {
+                log("Press <enter> to continue...");
+                Console.Read();
+            }
         }
     }
 }
