@@ -14,19 +14,16 @@ namespace PDFTextExtractor
     class Program
     {
         // the folder to look for PDF files
-        public static string folderPathBase = AppContext.BaseDirectory;
+        public static string inputPDFFolder = AppContext.BaseDirectory;
+        public static string outputTXTFolder = "";
 
         public static bool recursiveFolder = false;
         public static bool overwriteTextFile = false;
         public static bool stopOnException = true;
+        public static bool pauseOnException = true;
 
         static void Main(string[] args)
         {
-#if DEBUG
-            // using a different path for debugging
-            folderPathBase = @"D:\Users\MartonJr\Downloads";
-#endif
-
             log("PDFTextExtractor - Extract texts from PDFs and write them to text file using command line");
             log("   By Niall Moran - 2020");
             log("   Edited By Marton Lyra - 2023");
@@ -37,51 +34,91 @@ namespace PDFTextExtractor
 
                 log("");
                 log("   Parameters:");
-                log("      \"/f:<PDFs folder path>\"");
+                log("      \"/i:<input PDFs folder path>\" - Specifies the folder path where the PDF files are stored");
+                log("      \"/o:<output TXTs folder path>\" - (default same as input folder)");
+                log("");
                 log("      /r:false or /r:true : Recursive folder - Look for PDFs recursively inside subfolders (default /r:false)");
-                log("      /o:false or /o:true : Overwrite output Text File if exists (default /o:false)");
-                log("      /soe:false or /soe:true : Stop on Error - If false, it will try to ignore any exception and continue looking for other PDF files");
+                log("      /w:false or /w:true : Overwrite output Text File if exists (default /w:false)");
+                log("");
+                log("      /soe:false or /soe:true : Stop on Error - If false, it will try to ignore any exception and continue looking for other PDF files (default /soe:true)");
+                log("      /poe:false or /poe:true : Pause on Error - If true, it will ask for <enter> key to continue in case of Exceptions (default /poe:true)");
                 log("");
             }
 
             Arguments CommandLine = new Arguments(System.Environment.GetCommandLineArgs());
 
-            if (CommandLine["f"] != null)
-                folderPathBase = CommandLine["folderPath"];
+            // Input PDF folder:
+            if (CommandLine["i"] != null)
+                inputPDFFolder = CommandLine["i"];
 
+            // Output TXT folder:
+            if (CommandLine["o"] != null)
+                outputTXTFolder = CommandLine["o"];
+            else
+                outputTXTFolder = inputPDFFolder;
+
+            // Recursive search:
             if (CommandLine["r"] != null)
                 Boolean.TryParse(CommandLine["r"], out recursiveFolder);
 
-            if (CommandLine["o"] != null)
-                Boolean.TryParse(CommandLine["o"], out overwriteTextFile);
+            // Overwrite output Text File
+            if (CommandLine["w"] != null)
+                Boolean.TryParse(CommandLine["w"], out overwriteTextFile);
 
+            // Stop on Exception
             if (CommandLine["soe"] != null)
                 Boolean.TryParse(CommandLine["soe"], out stopOnException);
 
-            bool folderExists = Directory.Exists(folderPathBase);
-            log("PDF Text Extractor " + (folderExists ? "will" : "would") + " extract text from all PDF files in folder:");
-            log("   '" + folderPathBase + "'");
-            if (!folderExists)
+            // Pause on Exception
+            if (CommandLine["poe"] != null)
+                Boolean.TryParse(CommandLine["poe"], out pauseOnException);
+
+#if DEBUG
+            // using a different path for debugging
+            inputPDFFolder = @"D:\PDFInput";
+            outputTXTFolder = @"D:\PDFOutput";
+#endif
+
+
+            bool inputPDFFolderExists = Directory.Exists(inputPDFFolder);
+            bool outputTXTFolderExists = Directory.Exists(outputTXTFolder);
+            log("PDF Text Extractor " + ((inputPDFFolderExists && outputTXTFolderExists) ? "will" : "would") + " extract text from all PDF files in folder:");
+            log("   '" + inputPDFFolder + "'");
+            if (!inputPDFFolderExists)
             {
-                log("But this folder does not exists.\nAborting...");
+                log("But the input PDF folder does not exists:\n" + inputPDFFolder + "\nAborting...");
+                Console.Read();
+                return;
+            }
+            if (!outputTXTFolderExists)
+            {
+                log("But the output TXT folder does not exists:\n" + outputTXTFolder + "\nAborting...");
                 Console.Read();
                 return;
             }
 
             log("");
-            log("The text files will be saved in the same folder as the PDF files, with the same file name but with the .txt extension.");
+            if (inputPDFFolder.Equals(outputTXTFolderExists))
+                log("The text files will be saved in the same folder as the PDF files, with the same file name but with the .txt extension.");
+            else
+            {
+                log("The text files will be saved with the same tree folder, with the same file name but with the .txt extension.");
+            }
             log("");
-            log("If the text file already exists it WILL " + (overwriteTextFile ? "" : "NOT") + "BE overwritten.");
+            log("If the text file already exists it WILL " + (overwriteTextFile ? "" : "NOT ") + "BE overwritten.");
             log("");
             log("We will " + (recursiveFolder ? "" : "NOT ") + "look for PDFs inside children folders recursively.");
             log("");
             if (!stopOnException)
                 log("In case of Exceptions, I will try to continue.");
-            log("");
 
+            log("");
+            log(" Input PDF Folder: " + inputPDFFolder);
+            log("Output TXT Folder: " + outputTXTFolder);
+            log("");
             log("Press <enter> to continue");
             Console.Read();
-            searchForPDFAndExtractText(folderPathBase);
+            searchForPDFAndExtractText(inputPDFFolder);
 
             Console.Title = "Done!";
 
@@ -119,8 +156,13 @@ namespace PDFTextExtractor
                         log(string.Format("\nExtracting text from {0}", file.Name));
                         var result = extractor.Extract(file.FullName);
 
-                        // write to a text file with the same name
+                        // write to a text file with the same name but different extension:
                         string textFileName = string.Format("{0}{1}", file.Name.Replace(file.Extension, ""), ".txt");
+
+                        // Replacing input folder with output folder:
+                        string folderDestination = folderInfo.FullName.ReplaceInsensitive(inputPDFFolder, outputTXTFolder);
+                        if (!Directory.Exists(folderDestination))
+                            Directory.CreateDirectory(folderDestination);
 
                         if (!overwriteTextFile && File.Exists(textFileName))
                         {
@@ -129,7 +171,7 @@ namespace PDFTextExtractor
                         }
 
                         log(string.Format("Creating file '{0}'", textFileName));
-                        using (StreamWriter textFile = File.CreateText(string.Format(@"{0}\{1}", folderInfo.FullName, textFileName)))
+                        using (StreamWriter textFile = File.CreateText(string.Format(@"{0}\{1}", folderDestination, textFileName)))
                         {
                             textFile.WriteLine(TextUtil.CleanPDFText(result.Text));
                         }
@@ -146,7 +188,12 @@ namespace PDFTextExtractor
                             Console.Read();
                             System.Environment.Exit(255);
                         }
-                            
+                        
+                        if (pauseOnException)
+                        {
+                            log("Press <enter> to continue...");
+                            Console.Read();
+                        }
                     }
                     
                 }
@@ -161,6 +208,12 @@ namespace PDFTextExtractor
                     log("Press <enter> to abort");
                     Console.Read();
                     System.Environment.Exit(254);
+                }
+
+                if (pauseOnException)
+                {
+                    log("Press <enter> to continue...");
+                    Console.Read();
                 }
             }
         }
