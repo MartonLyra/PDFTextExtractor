@@ -1,6 +1,6 @@
 # PDFTextExtractor
 
-**PDFTextExtractor** is a straightforward Windows console application designed to extract text from multiple PDF files. It was initially developed by **Niall Moran** in 2020 and has been edited by **Marton Lyra** in 2023.
+**PDFTextExtractor** is a straightforward DotNet console application designed to extract text from multiple PDF files. It was initially developed by **Niall Moran** in 2020 and has been edited by **Marton Lyra** in 2023.
 
 
 To utilize the app, run it in the folder where your PDF files are located. Alternatively, you can specify the folder path as a parameter.
