@@ -197,7 +197,7 @@ namespace PDFTextExtractor
                                 log(msg + "Overwriting...");
                             else
                             {
-                                log(msg + "Ignoring...\n");
+                                log(msg + "Ignoring.\n");
                                 continue;
                             }
                         }

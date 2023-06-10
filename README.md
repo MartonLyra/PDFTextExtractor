@@ -24,6 +24,7 @@ To utilize the app, run it in the folder where your PDF files are located. Alter
 
 
 
+
 The application uses [TikaOnDotnet.TextExtractor](https://www.nuget.org/packages/TikaOnDotNet.TextExtractor/) to extract text from the PDF files and creates text files, with the same name, containing the content.
 
 
