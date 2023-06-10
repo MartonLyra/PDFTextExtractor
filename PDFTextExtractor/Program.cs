@@ -44,7 +44,7 @@ namespace PDFTextExtractor
                 log("");
                 log("      /r:false or /r:true : Recursive folder - Look for PDFs recursively inside subfolders (default /r:false)");
                 log("      /w:false or /w:true : Overwrite output Text File if exists (default /w:false)");
-                log("      /l:false or /l:true : Log to file in output folder (default /l:true)");
+                log("      /l:false or /l:true : Log console to file in output folder (default /l:true)");
                 log("");
                 log("      /soe:false or /soe:true : Stop on Error - If false, it will try to ignore any exception and continue looking for other PDF files (default /soe:true)");
                 log("      /poe:false or /poe:true : Pause on Error - If true, it will ask for <enter> key to continue in case of Exceptions (default /poe:true)");
@@ -71,11 +71,6 @@ namespace PDFTextExtractor
             if (CommandLine["w"] != null)
                 Boolean.TryParse(CommandLine["w"], out overwriteTextFile);
 
-            // Log to file in output folder (default /l:true)
-            if (CommandLine["l"] != null)
-                Boolean.TryParse(CommandLine["l"], out logToFile);
-
-
             // Stop on Exception
             if (CommandLine["soe"] != null)
                 Boolean.TryParse(CommandLine["soe"], out stopOnException);
@@ -86,18 +81,28 @@ namespace PDFTextExtractor
 
 #if DEBUG
             // using a different path for debugging
-            inputPDFFolder = @"D:\PDFInput-Delme";
-            outputTXTFolder = @"D:\PDFOutput-Delme";
+            // inputPDFFolder = @"D:\PDFInput-Delme";
+            // outputTXTFolder = @"D:\PDFOutput-Delme";
 #endif
 
-            // Calculating LOG fileName:
-            if (logToFile)
+
+            // Log to file in output folder (default /l:true)
+            if (CommandLine["l"] != null)
+                Boolean.TryParse(CommandLine["l"], out logToFile);
+            if (!logToFile)
+                logTemp.Clear();
+            else
             {
+                // Calculating LOG fileName:
                 logFileName = Path.Combine(
                     outputTXTFolder,
                     String.Format("{0:yyyy-MM-dd HH-mm}", DateTime.Now) + " - PDF Text Extractor.log"
                 );
             }
+
+
+
+
 
 
             bool inputPDFFolderExists = Directory.Exists(inputPDFFolder);
@@ -184,18 +189,27 @@ namespace PDFTextExtractor
                         if (!Directory.Exists(folderDestination))
                             Directory.CreateDirectory(folderDestination);
 
-                        if (!overwriteTextFile && File.Exists(Path.Combine(folderDestination, textFileName)))
+                        // Destiny text file already exists?
+                        if (File.Exists(Path.Combine(folderDestination, textFileName)))
                         {
-                            log("Text file already exists. Ignoring...\n");
-                            continue;
+                            string msg = "Text file already exists. ";
+                            if (overwriteTextFile)
+                                log(msg + "Overwriting...");
+                            else
+                            {
+                                log(msg + "Ignoring...\n");
+                                continue;
+                            }
                         }
+
+                        
 
                         log(string.Format("Creating file '{0}'", textFileName));
                         using (StreamWriter textFile = File.CreateText(string.Format(@"{0}\{1}", folderDestination, textFileName)))
                         {
                             textFile.WriteLine(TextUtil.CleanPDFText(result.Text));
                         }
-                        log("Done: " + textFileName);
+                        log("");
                     }
                     catch (Exception ex1)
                     {
