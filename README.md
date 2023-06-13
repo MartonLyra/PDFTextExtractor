@@ -18,6 +18,8 @@ To utilize the app, run it in the folder where your PDF files are located. Alter
   
   - **/l:false or /l:true** : Log console to file in output folder (default /l:true)
 
+  - **/ignoreDir:<folders ignored>** : folders to ignore - semicolon separated
+
   - **/soe:false or /soe:true**: Stop on Exceptions - Dictates whether the application should stop when encountering an error. If set to false, it will attempt to ignore any exceptions and continue searching for other PDF files. (detault /soe:true)
 
   - **/poe:false or /soe:true**: Pause on Exceptions - Dictates whether the application should ask for 'enter' key when encountering an error, before continuing. (detault /soe:true)

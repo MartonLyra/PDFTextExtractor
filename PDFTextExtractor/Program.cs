@@ -8,9 +8,17 @@ using sun.util.resources.cldr.bn;
 using org.omg.CORBA;
 using TikaOnDotNet.TextExtraction;
 using PDFTextExtractor.Util;
+using System.Diagnostics;
 
 namespace PDFTextExtractor
 {
+    /// <summary>
+    /// 
+    /// PDFTextExtractor is a straightforward DotNet console application designed to extract text from multiple PDF files.
+    /// 
+    /// It was initially developed by Niall Moran in 2020 and has been edited by Marton Lyra in 2023.
+    /// 
+    /// </summary>
     class Program
     {
         // the folder to look for PDF files
@@ -26,12 +34,23 @@ namespace PDFTextExtractor
         public static string logFileName = "";
         public static StringBuilder logTemp = new StringBuilder();
 
+        public static long totalFilesRead = 0;
+        public static long totalPDFExtractedWithSuccess = 0;
+        public static long totalPDFExtractedWithError = 0;
+        public static long totalPDFIgnored = 0;
+        public static long totalTXTOverriten = 0;
+        public static long totalExceptions = 0;
+        public static Stopwatch stopwatch = new Stopwatch();
+
+        public static List<string> ignoredDirs = new List<string>();
+
+        public static TextExtractor textExtractor;
 
         static void Main(string[] args)
         {
-            log("PDFTextExtractor - Extract texts from PDFs and write them to text file using command line");
-            log("   By Niall Moran - 2020");
-            log("   Edited By Marton Lyra - 2023");
+            log("\nPDFTextExtractor - Extract texts from PDFs and write them to text file using command line");
+            log("   By Niall Moran - 2020              - https://github.com/niallermoran/PDFTextExtractor");
+            log("   New features By Marton Lyra - 2023 - https://github.com/MartonLyra/PDFTextExtractor");
             log("");
 
             if (args.Count() <= 1)
@@ -45,6 +64,8 @@ namespace PDFTextExtractor
                 log("      /r:false or /r:true : Recursive folder - Look for PDFs recursively inside subfolders (default /r:false)");
                 log("      /w:false or /w:true : Overwrite output Text File if exists (default /w:false)");
                 log("      /l:false or /l:true : Log console to file in output folder (default /l:true)");
+                log("");
+                log("      /ignoreDir:<folders ignored> : folders to ignore in source dir - semicolon separated");
                 log("");
                 log("      /soe:false or /soe:true : Stop on Error - If false, it will try to ignore any exception and continue looking for other PDF files (default /soe:true)");
                 log("      /poe:false or /poe:true : Pause on Error - If true, it will ask for <enter> key to continue in case of Exceptions (default /poe:true)");
@@ -70,6 +91,22 @@ namespace PDFTextExtractor
             // Overwrite output Text File
             if (CommandLine["w"] != null)
                 Boolean.TryParse(CommandLine["w"], out overwriteTextFile);
+
+            // Folders to ignore - semicolon separated
+            if (CommandLine["ignoreDir"] != null)
+            {
+                string ignoreDirCommand = CommandLine["ignoreDir"];
+                List<string> tempIgnoredDirs = ignoreDirCommand.Split(';').ToList<string>();
+                log("Ignoring folders containing any of the following text:");
+                foreach (var item in tempIgnoredDirs)
+                {
+                    string tempItem = item.Trim();
+                    log($"  '{tempItem}'");
+                    ignoredDirs.Add(tempItem);
+                }
+                log("");
+            }
+
 
             // Stop on Exception
             if (CommandLine["soe"] != null)
@@ -143,24 +180,36 @@ namespace PDFTextExtractor
             log("");
             log("Press <enter> to continue");
             Console.Read();
+
+            textExtractor = new TextExtractor();
+            stopwatch.Start();
             searchForPDFAndExtractText(inputPDFFolder);
 
-            Console.Title = "Done!";
+            Console.Title = "All Done!";
+
+            showStatistics();
 
             log("Press <enter> to finish");
             Console.Read();
         }
 
+
+        /// <summary>
+        /// Search for PDF and extract text;
+        /// </summary>
+        /// <param name="currentFolder">Folder to look for</param>
         private static void searchForPDFAndExtractText(string currentFolder)
         {
-            Console.Title = currentFolder;
+            // Check if this is a user ignored folder:
+            if (shouldIgnoreDir(currentFolder))
+            {
+                log("Ignoring folder: " + currentFolder);
+                return;
+            }
 
-            TextExtractor extractor = new TextExtractor();
-
-            // get a list of PDF files in this directory
             try
             {
-                // get the folder this executable is running in
+                // get folder info
                 DirectoryInfo folderInfo = new DirectoryInfo(currentFolder);
 
                 // Let´s first get inside sub-folders:
@@ -174,62 +223,117 @@ namespace PDFTextExtractor
 
                 log("Folder: " + currentFolder);
 
+                // Read every pdf in currentFolder
                 foreach (FileInfo file in folderInfo.EnumerateFiles("*.pdf"))
                 {
-                    try
-                    {
-                        log(string.Format("Extracting text from {0}", file.Name));
-                        var result = extractor.Extract(file.FullName);
-
-                        // write to a text file with the same name but different extension:
-                        string textFileName = string.Format("{0}{1}", file.Name.Replace(file.Extension, ""), ".txt");
-
-                        // Replacing input folder with output folder:
-                        string folderDestination = folderInfo.FullName.ReplaceInsensitive(inputPDFFolder, outputTXTFolder);
-                        if (!Directory.Exists(folderDestination))
-                            Directory.CreateDirectory(folderDestination);
-
-                        // Destiny text file already exists?
-                        if (File.Exists(Path.Combine(folderDestination, textFileName)))
-                        {
-                            string msg = "Text file already exists. ";
-                            if (overwriteTextFile)
-                                log(msg + "Overwriting...");
-                            else
-                            {
-                                log(msg + "Ignoring.\n");
-                                continue;
-                            }
-                        }
-
-                        
-
-                        log(string.Format("Creating file '{0}'", textFileName));
-                        using (StreamWriter textFile = File.CreateText(string.Format(@"{0}\{1}", folderDestination, textFileName)))
-                        {
-                            textFile.WriteLine(TextUtil.CleanPDFText(result.Text));
-                        }
-                        log("");
-                    }
-                    catch (Exception ex1)
-                    {
-                        log("Sorry, we ran into a problem while processing file\n  '" + file.FullName + "'");
-                        log(" Exception: " + ex1 + "\n\n");
-
-                        StopOrPauseExecution();
-                    }
+                    bool retry = false;
                     
+                    do
+                    {
+                        try
+                        {
+                            Console.Title = $"[{String.Format("{0:#,##0}", totalFilesRead)}] - {file.FullName}";
+
+                            // Log DateTime + Total files read + PDF Full path name
+                            log($"[{String.Format("{0:yyyy/MM/dd HH:mm:ss}", DateTime.Now)} - {String.Format("{0:#,##0}", totalFilesRead)}] Extracting text from '{file.Name}'");
+                            var result = textExtractor.Extract(file.FullName);
+
+                            // write to a text file with the same name but different extension:
+                            string textFileName = string.Format("{0}{1}", file.Name.Replace(file.Extension, ""), ".txt");
+
+                            // Replacing input folder with output folder:
+                            string folderDestination = folderInfo.FullName.ReplaceInsensitive(inputPDFFolder, outputTXTFolder);
+                            if (!Directory.Exists(folderDestination))
+                                Directory.CreateDirectory(folderDestination);
+
+                            // Destiny text file already exists?
+                            if (File.Exists(Path.Combine(folderDestination, textFileName)))
+                            {
+                                string msg = "Text file already exists. ";
+                                if (overwriteTextFile)
+                                {
+                                    totalTXTOverriten++;
+                                    log(msg + "Overwriting...");
+                                }
+                                else
+                                {
+                                    totalPDFIgnored++;
+                                    log(msg + "Ignoring.\n");
+                                    continue;
+                                }
+                            }
+
+
+
+                            log(string.Format("Creating file '{0}'", textFileName));
+                            using (StreamWriter textFile = File.CreateText(string.Format(@"{0}\{1}", folderDestination, textFileName)))
+                            {
+                                textFile.WriteLine(TextUtil.CleanPDFText(result.Text));
+                            }
+                            log("");
+
+                            totalPDFExtractedWithSuccess++;
+                        }
+                        catch (Exception ex1)
+                        {
+                            totalExceptions++;
+                            totalPDFExtractedWithError++;
+                            showStatistics();
+                            log("Sorry, we ran into a problem while processing file\n  '" + file.FullName + "'");
+                            log(" Exception: " + ex1 + "\n\n");
+
+                            retry = RetryStopOrPauseExecution(true);
+
+                            if (retry)
+                                log("Let´s try it again...\n");
+                        }
+
+                    } while (retry);
+
+                    totalFilesRead++;
+
+                    if (totalFilesRead % 250 == 0)
+                        showStatistics();
                 }
             }
             catch (Exception ex2)
             {
+                totalExceptions++;
                 log("Sorry, we ran into a problem while processing folder\n  '" + currentFolder + "'");
                 log(" Exception: " + ex2 + "\n\n");
 
-                StopOrPauseExecution();
+                RetryStopOrPauseExecution();
             }
         }
 
+        /// <summary>
+        /// Check if current dir should be ignored comparing with user command parameter
+        /// </summary>
+        /// <param name="currentDir">current dir 2 check</param>
+        /// <returns>true if should ignore or false if should not ignore this folder</returns>
+        public static bool shouldIgnoreDir(string currentDir)
+        {
+            if (ignoredDirs.Count <= 0)
+                return false;
+
+            // Allows filter by folders "ending with" instead of only "contains"
+            if (!currentDir.EndsWith(@"\"))
+                currentDir = currentDir + @"\";
+
+            foreach (string dir2ignore in ignoredDirs)
+            {
+                if (currentDir.ContainsIgnoreCase(dir2ignore))
+                    return true;
+            }
+
+            return false;
+        }
+
+
+        /// <summary>
+        /// Write log text to console and save to file if configured by user
+        /// </summary>
+        /// <param name="text"></param>
         public static void log(string text)
         {
             Console.WriteLine(text);
@@ -267,7 +371,13 @@ namespace PDFTextExtractor
             }
         }
 
-        private static void StopOrPauseExecution()
+
+        /// <summary>
+        /// Depending on user configuration we will stop or pause execution;
+        /// </summary>
+        /// <param name="askForRetry">Should we ask for user to retry if functionality is avalable</param>
+        /// <returns>Returns true means 'retry'</returns>
+        private static bool RetryStopOrPauseExecution(bool askForRetry = false)
         {
             if (stopOnException)
             {
@@ -278,9 +388,35 @@ namespace PDFTextExtractor
 
             if (pauseOnException)
             {
-                log("Press <enter> to continue...");
-                Console.Read();
+                log($"Press {(askForRetry? "<r> to Retry or any other key" : "<enter>")} to to continue...");
+                if (askForRetry)
+                {
+                    ConsoleKeyInfo key = Console.ReadKey();
+                    if (key.KeyChar.ToString().EqualsIgnoreCase("R"))
+                        return true;
+                }
+                else
+                {
+                    Console.ReadLine();
+                }
+                
             }
+            return false;
+        }
+
+        /// <summary>
+        /// Log process statistics
+        /// </summary>
+        private static void showStatistics()
+        {
+            log("\n" + String.Format("{0:yyyy/MM/dd HH:mm:ss}", DateTime.Now));
+            log($"Total Files Read: {totalFilesRead}");
+            log($"Total PDF Extracted With Success: {totalPDFExtractedWithSuccess}");
+            log($"Total PDF Extracted With Error: {totalPDFExtractedWithError}");
+            log($"Total PDF Ignored: {totalPDFIgnored}");
+            log($"Total TXT Overriten: {totalTXTOverriten}");
+            log($"Total Exceptions: {totalExceptions}");
+            log("");
         }
     }
 }

@@ -21,5 +21,27 @@ namespace PDFTextExtractor.Util
             str = Regex.Replace(str, Regex.Escape(from), to.Replace("$", "$$"), RegexOptions.IgnoreCase);
             return str;
         }
+
+        /// <summary>
+        /// String equals with ignore case flag
+        /// </summary>
+        /// <param name="source"></param>
+        /// <param name="comp"></param>
+        /// <returns></returns>
+        public static bool EqualsIgnoreCase(this string source, string comp)
+        {
+            return String.Equals(source, comp, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// String contains with ignore case flag
+        /// </summary>
+        /// <param name="source"></param>
+        /// <param name="cont"></param>
+        /// <returns></returns>
+        public static bool ContainsIgnoreCase(this string source, string cont)
+        {
+            return source.IndexOf(cont, StringComparison.InvariantCultureIgnoreCase) >= 0;
+        }
     }
 }
